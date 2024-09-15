@@ -25,6 +25,7 @@ class CallKitParams {
     this.headers,
     this.android,
     this.ios,
+    this.activityName,
   });
 
   final String? id;
@@ -42,6 +43,7 @@ class CallKitParams {
   final Map<String, dynamic>? headers;
   final AndroidParams? android;
   final IOSParams? ios;
+  final String? activityName;
 
   factory CallKitParams.fromJson(Map<String, dynamic> json) =>
       _$CallKitParamsFromJson(json);

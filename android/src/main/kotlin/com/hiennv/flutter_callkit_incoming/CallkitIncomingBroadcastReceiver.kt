@@ -1,5 +1,5 @@
 package com.hiennv.flutter_callkit_incoming
-
+import com.hiennv.flutter_callkit_incoming.Data
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -93,6 +93,14 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
                         soundPlayerServiceIntent.putExtras(data)
                         context.startService(soundPlayerServiceIntent)
                     }
+
+                    val callData = Data.fromBundle(data)
+                    val activityClass = getActivityClass(context, callData.activityName)
+                    val newIntent = Intent(context, activityClass)
+                    newIntent.putExtras(data)
+                    newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(newIntent)
+
                 } catch (error: Exception) {
                     Log.e(TAG, null, error)
                 }
@@ -102,6 +110,14 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
                 try {
                     sendEventFlutter(CallkitConstants.ACTION_CALL_START, data)
                     addCall(context, Data.fromBundle(data), true)
+                    
+                    // Start your custom activity
+                    val callData = Data.fromBundle(data)
+                    val activityClass = getActivityClass(context, callData.activityName)
+                    val newIntent = Intent(context, activityClass)
+                    newIntent.putExtras(data)
+                    newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(newIntent)
                 } catch (error: Exception) {
                     Log.e(TAG, null, error)
                 }
@@ -113,6 +129,14 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
                     context.stopService(Intent(context, CallkitSoundPlayerService::class.java))
                     callkitNotificationManager.clearIncomingNotification(data, true)
                     addCall(context, Data.fromBundle(data), true)
+
+                    // use custom activityName
+                    val callData = Data.fromBundle(data)
+                    val activityClass = getActivityClass(context, callData.activityName)
+                    val newIntent = Intent(context, activityClass)
+                    newIntent.putExtras(data)
+                    newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(newIntent)
                 } catch (error: Exception) {
                     Log.e(TAG, null, error)
                 }
@@ -161,6 +185,14 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
                         val closeNotificationPanel = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
                         context.sendBroadcast(closeNotificationPanel)
                     }
+
+                    // Start your custom activity
+                    val callData = Data.fromBundle(data)
+                    val activityClass = getActivityClass(context, callData.activityName)
+                    val newIntent = Intent(context, activityClass)
+                    newIntent.putExtras(data)
+                    newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(newIntent)
                 } catch (error: Exception) {
                     Log.e(TAG, null, error)
                 }
@@ -214,4 +246,25 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
         )
         FlutterCallkitIncomingPlugin.sendEvent(event, forwardData)
     }
+
+    private fun getActivityClass(context: Context, activityName: String?): Class<*> {
+        return try {
+            if (!activityName.isNullOrEmpty()) {
+                Class.forName(activityName)
+            } else {
+                getDefaultActivityClass(context)
+            }
+        } catch (e: ClassNotFoundException) {
+            e.printStackTrace()
+            getDefaultActivityClass(context)
+        }
+    }
+    
+    private fun getDefaultActivityClass(context: Context): Class<*> {
+        val packageName = context.packageName
+        val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
+        val className = launchIntent?.component?.className
+        return Class.forName(className!!)
+    }
+    
 }

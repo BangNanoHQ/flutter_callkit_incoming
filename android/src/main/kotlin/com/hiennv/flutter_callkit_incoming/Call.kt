@@ -29,6 +29,8 @@ data class Data(val args: Map<String, Any?>) {
     var textAccept: String = (args["textAccept"] as? String) ?: ""
     @JsonProperty("textDecline")
     var textDecline: String = (args["textDecline"] as? String) ?: ""
+    @JsonProperty("activityName")
+    var activityName: String? = (args["activityName"] as? String)
     @JsonProperty("extra")
     var extra: HashMap<String, Any?> =
         (args["extra"] ?: HashMap<String, Any?>()) as HashMap<String, Any?>
@@ -214,6 +216,9 @@ data class Data(val args: Map<String, Any?>) {
             CallkitConstants.EXTRA_CALLKIT_IS_SHOW_FULL_LOCKED_SCREEN,
             isShowFullLockedScreen
         )
+        if (activityName != null) {
+            bundle.putString(CallkitConstants.EXTRA_CALLKIT_ACTIVITY_NAME, activityName)
+        }
         return bundle
     }
 
@@ -303,6 +308,7 @@ data class Data(val args: Map<String, Any?>) {
                 CallkitConstants.EXTRA_CALLKIT_IS_SHOW_FULL_LOCKED_SCREEN,
                 true
             )
+            data.activityName = bundle.getString(CallkitConstants.EXTRA_CALLKIT_ACTIVITY_NAME)
             return data
         }
     }
