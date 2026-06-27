@@ -102,9 +102,12 @@ class CallkitNotificationService : Service() {
             var mask = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 mask = mask or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                if (isVideo) {
-                    mask = mask or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-                }
+                // Camera FGS type intentionally omitted: the app does not stream the
+                // camera from this background service (in-call video runs in the
+                // foreground activity under the regular CAMERA permission). Declaring
+                // FOREGROUND_SERVICE_CAMERA would require a Google Play declaration we
+                // can't truthfully make. Keep the manifest's foregroundServiceType and
+                // this mask in sync — both are phoneCall|microphone only.
             }
             startForeground(notificationId, notification, mask)
         } else {
