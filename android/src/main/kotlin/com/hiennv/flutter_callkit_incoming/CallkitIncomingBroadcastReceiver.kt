@@ -8,14 +8,56 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.telecom.TelecomManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import java.util.concurrent.ConcurrentHashMap
 
 class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "CallkitIncomingReceiver"
+
+        // Start BangNano modification
+        // An incoming call rings until it is answered, declined or ended, or
+        // until its `duration` runs out. Upstream acted on the duration only
+        // in CallkitIncomingActivity, and there only by closing the activity:
+        // the ringtone went on, the Telecom call stayed RINGING, nothing
+        // reported a timeout, and a call shown as a heads-up notification
+        // (phone unlocked, so no activity) had no limit at all. A caller who
+        // gave up left the other phone ringing until it was restarted.
+        //
+        // The timeout now starts here, the moment the call comes in, whatever
+        // then shows it, and ends it the way a timeout should: with
+        // ACTION_CALL_TIMEOUT, which stops the ringtone, clears the
+        // notification, ends the Telecom call, shows the missed call and tells
+        // the app. Answering, declining or ending the call first cancels it.
+        private val ringTimeoutHandler = Handler(Looper.getMainLooper())
+        private val ringTimeouts = ConcurrentHashMap<String, Runnable>()
+
+        private fun scheduleRingTimeout(context: Context, data: Bundle) {
+            val id = data.getString(CallkitConstants.EXTRA_CALLKIT_ID) ?: return
+            val duration = data.getLong(CallkitConstants.EXTRA_CALLKIT_DURATION, 0L)
+            if (duration <= 0L) return
+            cancelRingTimeout(data)
+            val appContext = context.applicationContext
+            val timeout = Runnable {
+                // answered, declined or ended in the meantime
+                if (ringTimeouts.remove(id) == null) return@Runnable
+                Log.d(TAG, "ring timed out id=$id")
+                appContext.sendBroadcast(getIntentTimeout(appContext, data))
+            }
+            ringTimeouts[id] = timeout
+            ringTimeoutHandler.postDelayed(timeout, duration)
+        }
+
+        private fun cancelRingTimeout(data: Bundle) {
+            val id = data.getString(CallkitConstants.EXTRA_CALLKIT_ID) ?: return
+            ringTimeouts.remove(id)?.let { ringTimeoutHandler.removeCallbacks(it) }
+        }
+        // End BangNano modification
         var silenceEvents = false
 
         fun getIntent(context: Context, action: String, data: Bundle?) =
@@ -179,6 +221,9 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
             "${context.packageName}.${CallkitConstants.ACTION_CALL_INCOMING}" -> {
                 try {
                     registerTelecomIncomingCall(context, data)
+                    // Start BangNano modification
+                    scheduleRingTimeout(context, data)
+                    // End BangNano modification
                     val incomingData = Data.fromBundle(data)
                     if (incomingData.isFullScreen) {
                         val intent = CallkitIncomingActivity.getIntent(context, data)
@@ -210,6 +255,7 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
 
             "${context.packageName}.${CallkitConstants.ACTION_CALL_ACCEPT}" -> {
                 try {
+                    cancelRingTimeout(data) // BangNano modification
                     driveTelecomConnection(context, data, CallkitConstants.ACTION_CALL_ACCEPT)
                     FlutterCallkitIncomingPlugin.notifyEventCallbacks(CallkitEventCallback.CallEvent.ACCEPT, data)
                     // start service and show ongoing call when call is accepted
@@ -228,6 +274,7 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
 
             "${context.packageName}.${CallkitConstants.ACTION_CALL_DECLINE}" -> {
                 try {
+                    cancelRingTimeout(data) // BangNano modification
                     driveTelecomConnection(context, data, CallkitConstants.ACTION_CALL_DECLINE)
                     FlutterCallkitIncomingPlugin.notifyEventCallbacks(CallkitEventCallback.CallEvent.DECLINE, data)
                     // clear notification
@@ -241,6 +288,7 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
 
             "${context.packageName}.${CallkitConstants.ACTION_CALL_ENDED}" -> {
                 try {
+                    cancelRingTimeout(data) // BangNano modification
                     driveTelecomConnection(context, data, CallkitConstants.ACTION_CALL_ENDED)
                     FlutterCallkitIncomingPlugin.notifyEventCallbacks(CallkitEventCallback.CallEvent.END, data)
                     // clear notification and stop service
@@ -255,6 +303,7 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
 
             "${context.packageName}.${CallkitConstants.ACTION_CALL_TIMEOUT}" -> {
                 try {
+                    cancelRingTimeout(data) // BangNano modification
                     driveTelecomConnection(context, data, CallkitConstants.ACTION_CALL_TIMEOUT)
                     // clear notification and show miss notification
                     val notificationManager = getCallkitNotificationManager()

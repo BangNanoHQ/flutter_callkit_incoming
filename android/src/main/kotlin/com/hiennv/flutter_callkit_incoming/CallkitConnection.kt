@@ -37,6 +37,11 @@ import java.util.concurrent.ConcurrentHashMap
 class CallkitConnection(
     val callId: String,
     val bundle: Bundle,
+    // Start BangNano modification
+    // To hand Telecom's own answer/reject/disconnect on to the plugin's
+    // receiver; see [reportToPlugin].
+    private val context: Context? = null,
+    // End BangNano modification
 ) : Connection() {
 
     companion object {
@@ -85,26 +90,62 @@ class CallkitConnection(
     override fun onAnswer() {
         super.onAnswer()
         Log.d(TAG, "onAnswer id=$callId")
+        // Start BangNano modification
+        if (state == STATE_RINGING) reportToPlugin(CallkitIncomingBroadcastReceiver::getIntentAccept)
+        // End BangNano modification
         setActive()
     }
 
     override fun onReject() {
         super.onReject()
         Log.d(TAG, "onReject id=$callId")
+        // Start BangNano modification
+        reportToPlugin(CallkitIncomingBroadcastReceiver::getIntentDecline)
+        // End BangNano modification
         finishWithCause(DisconnectCause.REJECTED)
     }
 
     override fun onDisconnect() {
         super.onDisconnect()
         Log.d(TAG, "onDisconnect id=$callId")
+        // Start BangNano modification
+        reportToPlugin(
+            if (state == STATE_RINGING) CallkitIncomingBroadcastReceiver::getIntentDecline
+            else CallkitIncomingBroadcastReceiver::getIntentEnded
+        )
+        // End BangNano modification
         finishWithCause(DisconnectCause.LOCAL)
     }
 
     override fun onAbort() {
         super.onAbort()
         Log.d(TAG, "onAbort id=$callId")
+        // Start BangNano modification
+        reportToPlugin(CallkitIncomingBroadcastReceiver::getIntentEnded)
+        // End BangNano modification
         finishWithCause(DisconnectCause.UNKNOWN)
     }
+
+    // Start BangNano modification
+    /**
+     * Telecom can answer, reject or end the call itself: a Bluetooth headset
+     * button, a watch, the car, or a cellular call taking over. Upstream only
+     * updated the Telecom state, so the plugin went on ringing and showing the
+     * incoming notification, and the app never heard of it. The broadcast the
+     * plugin's own Accept/Decline buttons send is what stops the ringtone,
+     * clears the notification and tells the app, so send that. It goes out
+     * before [finishWithCause] unregisters this connection, and the receiver's
+     * own Telecom update then finds nothing left to do.
+     */
+    private fun reportToPlugin(intent: (Context, Bundle?) -> Intent) {
+        val ctx = context ?: return
+        try {
+            ctx.sendBroadcast(intent(ctx, bundle))
+        } catch (e: Exception) {
+            Log.w(TAG, "reportToPlugin failed: ${e.message}")
+        }
+    }
+    // End BangNano modification
 
     override fun onHold() {
         super.onHold()
