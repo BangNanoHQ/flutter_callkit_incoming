@@ -504,6 +504,53 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             appDelegate.onTimeOut(call)
         }
     }
+
+    // Start BangNano modification
+    /// Stops a call that is still ringing here, for a VoIP "cancel" push: the
+    /// call ended before it was answered (shown as missed), or the member
+    /// answered it on another device.
+    ///
+    /// endCall() is not that. In the PushKit flow it ends whichever call the
+    /// last push stored, answered or not - and a cancel also reaches the
+    /// device that just answered, which hung that call up.
+    ///
+    /// Every VoIP push must report a call to CallKit, or iOS terminates the
+    /// app and, if it keeps happening, stops delivering VoIP pushes to it. A
+    /// cancel for a call that is no longer here (it ended, or never arrived)
+    /// therefore reports one under a fresh id and ends it at once.
+    /// `completion` is the PushKit completion handler.
+    @objc public func cancelRingingCall(_ id: String, answeredElsewhere: Bool, completion: @escaping () -> Void) {
+        if let uuid = UUID(uuidString: id), let call = self.callManager.callWithUUID(uuid: uuid) {
+            let answeredHere = call.data.isAccepted || call.hasConnected
+                || self.answerCall?.uuid == uuid || self.outgoingCall?.uuid == uuid
+            if !answeredHere {
+                self.sharedProvider?.reportCall(
+                    with: uuid, endedAt: Date(),
+                    reason: answeredElsewhere ? CXCallEndedReason.answeredElsewhere : CXCallEndedReason.remoteEnded)
+                call.endCall()
+                self.callManager.removeCall(call)
+                if answeredElsewhere {
+                    sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, call.data.toJSON())
+                } else {
+                    self.showMissedCallNotification(call.data)
+                    sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TIMEOUT, call.data.toJSON())
+                }
+            }
+            completion()
+            return
+        }
+        let placeholder = Data(id: UUID().uuidString, nameCaller: "", handle: "", type: 0)
+        initCallkitProvider(placeholder)
+        guard let fakeUuid = UUID(uuidString: placeholder.uuid) else {
+            completion()
+            return
+        }
+        self.sharedProvider?.reportNewIncomingCall(with: fakeUuid, update: CXCallUpdate()) { _ in
+            self.sharedProvider?.reportCall(with: fakeUuid, endedAt: Date(), reason: CXCallEndedReason.remoteEnded)
+            completion()
+        }
+    }
+    // End BangNano modification
     
     func getHandleType(_ handleType: String?) -> CXHandle.HandleType {
         var typeDefault = CXHandle.HandleType.generic
