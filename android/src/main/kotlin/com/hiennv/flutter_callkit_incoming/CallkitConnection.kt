@@ -150,11 +150,25 @@ class CallkitConnection(
     override fun onHold() {
         super.onHold()
         setOnHold()
+        // Start BangNano modification
+        // Telecom holds the call when a cellular call takes over. The app has
+        // to hear of it (it silences its mic while held), as iOS reports it.
+        FlutterCallkitIncomingPlugin.sendEvent(
+            CallkitConstants.ACTION_CALL_TOGGLE_HOLD,
+            mapOf("id" to callId, "isOnHold" to true)
+        )
+        // End BangNano modification
     }
 
     override fun onUnhold() {
         super.onUnhold()
         setActive()
+        // Start BangNano modification
+        FlutterCallkitIncomingPlugin.sendEvent(
+            CallkitConstants.ACTION_CALL_TOGGLE_HOLD,
+            mapOf("id" to callId, "isOnHold" to false)
+        )
+        // End BangNano modification
     }
 
     // -------------------------------------------------------------------------
