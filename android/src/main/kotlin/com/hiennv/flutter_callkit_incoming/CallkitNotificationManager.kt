@@ -28,6 +28,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
+import android.util.Log
 import android.text.format.DateFormat
 import android.view.View
 import android.widget.RemoteViews
@@ -230,8 +231,17 @@ class CallkitNotificationManager(
             data.getBoolean(CallkitConstants.EXTRA_CALLKIT_IS_CUSTOM_NOTIFICATION, false)
         val isCustomSmallExNotification =
             data.getBoolean(CallkitConstants.EXTRA_CALLKIT_IS_CUSTOM_SMALL_EX_NOTIFICATION, false)
+        // Start BangNano modification
+        // From Android 14 a CallStyle notification is refused ("must be for a
+        // foreground service ... or use a fullScreenIntent") unless the app
+        // may use full-screen intents; an app without USE_FULL_SCREEN_INTENT
+        // gets no incoming-call notification at all, only the ringtone. Such
+        // an app gets an ordinary call notification with the two buttons.
+        val callStyle = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            canUseFullScreenIntent()
+        // End BangNano modification
         if (isCustomNotification) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            if (callStyle) {
 
                 val caller = data.getString(CallkitConstants.EXTRA_CALLKIT_NAME_CALLER, "")
                 val person = Person.Builder().setName(caller).setImportant(
@@ -327,7 +337,7 @@ class CallkitNotificationManager(
                 )
             }
             val caller = data.getString(CallkitConstants.EXTRA_CALLKIT_NAME_CALLER, "")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            if (callStyle) {
                 val person = Person.Builder().setName(caller).setImportant(
                     data.getBoolean(CallkitConstants.EXTRA_CALLKIT_IS_IMPORTANT, true)
                 ).setBot(data.getBoolean(CallkitConstants.EXTRA_CALLKIT_IS_BOT, false)).build()
@@ -350,7 +360,7 @@ class CallkitNotificationManager(
                 val textAccept = data.getString(CallkitConstants.EXTRA_CALLKIT_TEXT_ACCEPT, "")
                 val acceptAction: NotificationCompat.Action = NotificationCompat.Action.Builder(
                     R.drawable.ic_accept,
-                    if (TextUtils.isEmpty(textDecline)) context.getString(R.string.text_accept) else textAccept,
+                    if (TextUtils.isEmpty(textAccept)) context.getString(R.string.text_accept) else textAccept,
                     getAcceptPendingIntent(notificationId, data)
                 ).build()
                 notificationBuilder?.addAction(acceptAction)
@@ -1040,9 +1050,17 @@ class CallkitNotificationManager(
             // End Signify modification
         }
         callkitNotification?.let {
-            getNotificationManager().notify(
-                it.id, callkitNotification.notification
-            )
+            // Start BangNano modification
+            // a notification the system refuses must not stop the call
+            // reaching the app
+            try {
+                getNotificationManager().notify(
+                    it.id, callkitNotification.notification
+                )
+            } catch (e: Exception) {
+                Log.e("CallkitNotification", "incoming notification not posted", e)
+            }
+            // End BangNano modification
         }
     }
 
